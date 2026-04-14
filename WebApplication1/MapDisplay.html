@@ -1,0 +1,1966 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中国古诗词热力图</title>
+
+    <!-- Cesium 库 -->
+    <!-- 必须在加载Cesium之前设置CESIUM_BASE_URL -->
+    <script>
+        window.CESIUM_BASE_URL = 'https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/';
+    </script>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.111/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- ECharts -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <!-- heatmap.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/heatmap.js/2.0.2/heatmap.min.js"></script>
+    <script src="js/time.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/swiper/swiper-bundle.min.css">
+    <script src="https://unpkg.com/swiper/swiper-bundle.min.js"></script>
+    <link rel="stylesheet" href="css/StyleSheet1.css">
+
+    <!-- 数据由 API 动态加载，不再引入静态 JS 文件 -->
+
+    <!-- 逻辑模块引入 (添加版本号强制清除浏览器缓存) -->
+    <script src="js/mapManager.js?v=4.0"></script>
+    <script src="js/uiManager.js?v=4.0"></script>
+    <script src="js/timelineManager.js?v=4.0"></script>
+    <script src="js/timelineIntegration.js?v=4.0"></script>
+    <script src="js/spatialAnalysis.js?v=4.0"></script>
+</head>
+
+<body>
+    <!-- ======== 欢迎页覆盖层 ======== -->
+    <div id="welcomeOverlay">
+        <canvas id="particleCanvas"></canvas>
+        <div class="welcome-content">
+            <div class="welcome-deco-line"></div>
+            <h1 class="welcome-title">诗词万里</h1>
+            <p class="welcome-subtitle">探索中国古诗词的地理足迹</p>
+            
+            <div class="welcome-btn-group">
+                <!-- 临时注释免除登录，便于快速进入测试
+                <button class="enter-btn auth-trigger-btn" onclick="showAuthModal('login')">登录</button>
+                <button class="enter-btn btn-outline auth-trigger-btn" onclick="showAuthModal('register')">注册</button>
+                -->
+                <!-- 恢复原有直接进入地图的按钮，便于快速测试 -->
+                <button id="enterMapBtn" class="enter-btn">进入地图</button>
+            </div>
+            
+            <!-- ====== 登录/注册 模态框 ====== -->
+            <div id="authModal" class="auth-modal" style="display:none; opacity:0; transition: opacity 0.4s ease;">
+                <div class="auth-modal-content">
+                    <div class="auth-header">
+                        <h2 id="authTitle" class="auth-title">用户登录</h2>
+                    </div>
+                    <form id="authForm" onsubmit="handleAuth(event)">
+                        <div class="input-group">
+                            <input type="text" id="authUsername" required autocomplete="off">
+                            <label>用户名 / Username</label>
+                            <div class="input-line"></div>
+                        </div>
+                        <div class="input-group">
+                            <input type="password" id="authPassword" required>
+                            <label>密 码 / Password</label>
+                            <div class="input-line"></div>
+                        </div>
+                        <div class="input-group" id="confirmPasswordGroup" style="display:none; opacity:0; height:0; transition: all 0.3s ease; margin-bottom: 10px;">
+                            <input type="password" id="authConfirmPassword">
+                            <label>确认密码 / Confirm</label>
+                            <div class="input-line"></div>
+                        </div>
+                        <button type="submit" class="enter-btn auth-submit-btn">确 认</button>
+                        <div class="auth-switch">
+                            <span id="authSwitchText">还没有账号？</span>
+                            <a href="javascript:void(0)" onclick="toggleAuthMode()" id="authSwitchLink">立即注册</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="welcome-quote">大漠孤烟直，长河落日圆 —— 王维</div>
+    </div>
+
+    <script>
+        // ======== 认证交互逻辑 ========
+        let currentAuthMode = 'login';
+        
+        function showAuthModal(mode) {
+            const modal = document.getElementById('authModal');
+            const btns = document.querySelectorAll('.auth-trigger-btn');
+            btns.forEach(btn => btn.style.display = 'none');
+            const decoLine = document.querySelector('.welcome-deco-line');
+            if (decoLine) decoLine.style.display = 'none';
+            const subtitle = document.querySelector('.welcome-subtitle');
+            if (subtitle) subtitle.style.display = 'none';
+            
+            modal.style.display = 'block';
+            setTimeout(() => { modal.style.opacity = '1'; }, 10);
+            
+            setAuthMode(mode);
+        }
+        
+        function setAuthMode(mode) {
+            currentAuthMode = mode;
+            const title = document.getElementById('authTitle');
+            const confirmGroup = document.getElementById('confirmPasswordGroup');
+            const confirmInput = document.getElementById('authConfirmPassword');
+            const switchText = document.getElementById('authSwitchText');
+            const switchLink = document.getElementById('authSwitchLink');
+            
+            if(mode === 'login') {
+                title.innerText = '用户登录';
+                confirmGroup.style.opacity = '0';
+                confirmGroup.style.height = '0';
+                setTimeout(() => { confirmGroup.style.display = 'none'; }, 300);
+                confirmInput.removeAttribute('required');
+                switchText.innerText = '还没有账号？';
+                switchLink.innerText = '立即注册';
+            } else {
+                title.innerText = '账号注册';
+                confirmGroup.style.display = 'block';
+                setTimeout(() => { 
+                    confirmGroup.style.opacity = '1'; 
+                    confirmGroup.style.height = '40px'; 
+                }, 10);
+                confirmInput.setAttribute('required', 'required');
+                switchText.innerText = '已有账号？';
+                switchLink.innerText = '立即登录';
+            }
+        }
+        
+        function toggleAuthMode() {
+            setAuthMode(currentAuthMode === 'login' ? 'register' : 'login');
+        }
+        
+        function handleAuth(e) {
+            e.preventDefault();
+            const username = document.getElementById('authUsername').value;
+            const pwd = document.getElementById('authPassword').value;
+            
+            if(currentAuthMode === 'register') {
+                const pwdConfirm = document.getElementById('authConfirmPassword').value;
+                if(pwd !== pwdConfirm) {
+                    alert('两次输入的密码不一致！');
+                    return;
+                }
+            }
+            
+            const submitBtn = document.querySelector('.auth-submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerText = '验证中...';
+
+            fetch(`PoemApiHandler.ashx?type=${currentAuthMode}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username, password: pwd })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if(data.success) {
+                    alert(data.message);
+                    enterMap();
+                } else {
+                    alert(data.message || '操作失败');
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = '确 认';
+                }
+            })
+            .catch(err => {
+                alert('请求出错，请检查网络');
+                submitBtn.disabled = false;
+                submitBtn.innerText = '确 认';
+            });
+        }
+        
+        function enterMap() {
+            const overlay = document.getElementById('welcomeOverlay');
+            overlay.classList.add('fade-out');
+            setTimeout(function () {
+                if(window.particleAnimId) cancelAnimationFrame(window.particleAnimId);
+                overlay.remove();
+            }, 1300);
+        }
+
+        // 绑定直接进入地图按钮的事件
+        const quickEnterBtn = document.getElementById('enterMapBtn');
+        if(quickEnterBtn) {
+            quickEnterBtn.addEventListener('click', enterMap);
+        }
+
+        // ======== 粒子动画 ========
+        (function () {
+            const canvas = document.getElementById('particleCanvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            let particles = [];
+            let w, h;
+
+            function resize() {
+                w = canvas.width = canvas.offsetWidth;
+                h = canvas.height = canvas.offsetHeight;
+            }
+
+            function createParticle() {
+                return {
+                    x: Math.random() * w,
+                    y: Math.random() * h,
+                    r: Math.random() * 2 + 0.5,
+                    dx: (Math.random() - 0.5) * 0.3,
+                    dy: (Math.random() - 0.5) * 0.3,
+                    alpha: Math.random() * 0.6 + 0.1,
+                    alphaDir: Math.random() > 0.5 ? 0.003 : -0.003,
+                    hue: Math.random() > 0.7 ? 200 : 180 // 蓝或青
+                };
+            }
+
+            function init() {
+                resize();
+                particles = [];
+                const count = Math.min(Math.floor(w * h / 6000), 200);
+                for (let i = 0; i < count; i++) {
+                    particles.push(createParticle());
+                }
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, w, h);
+                particles.forEach(p => {
+                    // 呼吸闪烁
+                    p.alpha += p.alphaDir;
+                    if (p.alpha >= 0.7 || p.alpha <= 0.05) p.alphaDir *= -1;
+
+                    // 移动
+                    p.x += p.dx;
+                    p.y += p.dy;
+                    if (p.x < 0) p.x = w;
+                    if (p.x > w) p.x = 0;
+                    if (p.y < 0) p.y = h;
+                    if (p.y > h) p.y = 0;
+
+                    // 绘制发光粒子
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsla(${p.hue}, 100%, 70%, ${p.alpha})`;
+                    ctx.fill();
+
+                    // 外发光
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.r * 3, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsla(${p.hue}, 100%, 70%, ${p.alpha * 0.15})`;
+                    ctx.fill();
+                });
+
+                // 连线
+                for (let i = 0; i < particles.length; i++) {
+                    for (let j = i + 1; j < particles.length; j++) {
+                        const dx = particles[i].x - particles[j].x;
+                        const dy = particles[i].y - particles[j].y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        if (dist < 120) {
+                            ctx.beginPath();
+                            ctx.moveTo(particles[i].x, particles[i].y);
+                            ctx.lineTo(particles[j].x, particles[j].y);
+                            ctx.strokeStyle = `rgba(0, 255, 255, ${0.08 * (1 - dist / 120)})`;
+                            ctx.lineWidth = 0.5;
+                            ctx.stroke();
+                        }
+                    }
+                }
+
+                window.particleAnimId = requestAnimationFrame(draw);
+            }
+
+            init();
+            draw();
+            window.addEventListener('resize', init);
+        })();
+    </script>
+
+    <div id="cesiumContainer"></div>
+    <div id="heatmapContainer"></div>
+    <!-- 朝代折线图面板 -->
+    <div id="dynastyChartPanel" class="chart-panel">
+        <div class="chart-panel-header">
+            <span>不同朝代的古诗词量</span>
+            <button class="chart-close-btn" data-chart="dynasty" title="关闭">×</button>
+        </div>
+        <div id="dynastyLineChart" style="width: 100%; height: 250px;"></div>
+    </div>
+
+    <!-- 城市柱状图面板 -->
+    <div id="cityChartPanel" class="chart-panel">
+        <div class="chart-panel-header">
+            <span>不同城市的古诗词排行榜</span>
+            <button class="chart-close-btn" data-chart="city" title="关闭">×</button>
+        </div>
+        <div id="cityBarChart" style="width: 100%; height: 250px;"></div>
+    </div>
+
+    <!-- 作者饼图面板 -->
+    <div id="authorChartPanel" class="chart-panel">
+        <div class="chart-panel-header">
+            <span>不同诗人的诗词数量</span>
+            <button class="chart-close-btn" data-chart="author" title="关闭">×</button>
+        </div>
+        <div id="authorPieChart" style="width: 100%; height: 250px;"></div>
+    </div>
+
+    <div class="header">
+        <h1 class="title">中国古诗词地理分布可视化</h1>
+    </div>
+
+    <div class="time-display">
+        <div id="time"></div>
+    </div>
+
+    <!-- 底部时间轴控制条 -->
+    <div class="timeline-container">
+        <div class="timeline-controls">
+            <button id="timelinePlayBtn" class="timeline-btn play" title="播放演变">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8 5V19L19 12L8 5Z" fill="currentColor" />
+                </svg>
+            </button>
+            <div class="timeline-slider-wrapper">
+                <div class="timeline-labels">
+                    <span>唐初</span>
+                    <span>盛唐</span>
+                    <span>中唐</span>
+                    <span>晚唐</span>
+                    <span>北宋</span>
+                    <span>南宋</span>
+                </div>
+                <input type="range" min="618" max="1279" value="618" class="timeline-slider" id="timelineSlider">
+                <div class="timeline-current-val" id="timelineCurrentVal">618年</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 时间轴信息面板 -->
+    <div class="timeline-info-panel" id="timelineInfoPanel">
+        <div class="info-row">
+            <span class="info-label">朝代</span>
+            <span class="info-value dynasty-tag">唐初</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">累计诗词</span>
+            <span class="info-value">-- 首</span>
+        </div>
+        <div class="info-row">
+            <span class="info-label">诗词最多</span>
+            <span class="info-value">--</span>
+        </div>
+    </div>
+
+
+    <div class="right-icon-panel">
+
+        <!-- 图层控制组 -->
+        <div class="control-group">
+            <button id="btnLayerGroup" class="icon-btn group-toggle" title="图层切换">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                </svg>
+            </button>
+            <div class="sub-menu layer-menu">
+                <button id="btnVec" class="icon-btn sub-btn active" title="矢量图">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="3" width="18" height="18" stroke="currentColor" stroke-width="2" />
+                        <line x1="3" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1" />
+                        <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" stroke-width="1" />
+                    </svg>
+                    <span>矢量</span>
+                </button>
+                <button id="btnImg" class="icon-btn sub-btn" title="影像图">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="3" y="3" width="18" height="18" stroke="currentColor" stroke-width="2" />
+                        <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" />
+                        <path d="M3 15L8 10L13 15L21 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                    <span>影像</span>
+                </button>
+                <button id="btnTer" class="icon-btn sub-btn" title="地形图">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 12L8 7L12 11L16 7L21 12" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round" />
+                        <path d="M3 12V21H21V12" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                    <span>地形</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 空间分析工具组 -->
+        <div class="control-group">
+            <button id="btnSpatialGroup" class="icon-btn group-toggle" title="空间分析">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="4" y="4" width="16" height="16" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4" rx="2"/>
+                    <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                </svg>
+            </button>
+            <div class="sub-menu chart-menu spatial-menu">
+                <button id="btnDrawRect" class="icon-btn sub-btn" title="矩形框选">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                    <span>框选</span>
+                </button>
+                <button id="btnDrawCircle" class="icon-btn sub-btn" title="圆形缓冲">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>
+                    <span>缓冲</span>
+                </button>
+                <button id="btnClearSpatial" class="icon-btn sub-btn" title="清除分析">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    <span>清除</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 文化地理漫游工具组 -->
+        <div class="control-group">
+            <button id="btnCultureGroup" class="icon-btn group-toggle" title="七大诗卷漫游">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+            <div class="sub-menu chart-menu culture-menu">
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="zhongyuan" title="中原故土（帝凰金）">
+                    <span>中原</span>
+                </button>
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="bashu" title="巴蜀险道（幽森翠）">
+                    <span>巴蜀</span>
+                </button>
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="jiangnan" title="江南水乡（烟雨青）">
+                    <span>江南</span>
+                </button>
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="frontier" title="大漠边塞（血阳红）">
+                    <span>边塞</span>
+                </button>
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="lingnan" title="岭南逐客（瘴气紫）">
+                    <span>岭南</span>
+                </button>
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="jingchu" title="荆楚云梦（云梦蓝）">
+                    <span>荆楚</span>
+                </button>
+                <button class="icon-btn sub-btn culture-theme-btn" data-theme="qilu" title="齐鲁名山（岱宗苍）">
+                    <span>齐鲁</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 统计图表组 -->
+        <div class="control-group">
+            <button id="btnChartGroup" class="icon-btn group-toggle" title="数据统计">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="3" width="7" height="7" stroke="currentColor" stroke-width="2" />
+                    <rect x="14" y="3" width="7" height="7" stroke="currentColor" stroke-width="2" />
+                    <rect x="14" y="14" width="7" height="7" stroke="currentColor" stroke-width="2" />
+                    <rect x="3" y="14" width="7" height="7" stroke="currentColor" stroke-width="2" />
+                </svg>
+            </button>
+            <div class="sub-menu chart-menu">
+                <button id="btnDynastyChart" class="icon-btn sub-btn chart-toggle-icon" title="朝代折线图">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M3 3V21H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        <path d="M7 16L12 11L16 15L21 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                    <span>朝代</span>
+                </button>
+                <button id="btnCityChart" class="icon-btn sub-btn chart-toggle-icon" title="城市柱状图">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="4" y="8" width="4" height="12" stroke="currentColor" stroke-width="2" />
+                        <rect x="10" y="4" width="4" height="16" stroke="currentColor" stroke-width="2" />
+                        <rect x="16" y="6" width="4" height="14" stroke="currentColor" stroke-width="2" />
+                    </svg>
+                    <span>城市</span>
+                </button>
+                <button id="btnAuthorChart" class="icon-btn sub-btn chart-toggle-icon" title="作者饼图">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                        <path d="M12 2C13.1 2 14 2.9 14 4C14 5.1 13.1 6 12 6" stroke="currentColor" stroke-width="2"
+                            fill="currentColor" opacity="0.3" />
+                        <path d="M12 6C15.3 6 18 8.7 18 12C18 15.3 15.3 18 12 18" stroke="currentColor" stroke-width="2"
+                            fill="currentColor" opacity="0.3" />
+                    </svg>
+                    <span>诗人</span>
+                </button>
+            </div>
+        </div>
+
+        <button id="btnHeatmap" class="icon-btn active" title="热力图开关">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                <circle cx="12" cy="12" r="6" fill="currentColor" opacity="0.3" />
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+            </svg>
+        </button>
+
+        <button id="btnRoute" class="icon-btn" title="诗人轨迹">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 12C4 12 5 8 12 8C19 8 20 12 20 12" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" />
+                <circle cx="4" cy="12" r="2" fill="currentColor" />
+                <circle cx="20" cy="12" r="2" fill="currentColor" />
+                <path d="M12 8V5" stroke="currentColor" stroke-width="2" />
+                <circle cx="12" cy="4" r="1.5" fill="currentColor" />
+            </svg>
+        </button>
+
+        <!-- 路线选择面板 - 推拉式 -->
+        <div id="routeSelectPanel" class="route-select-panel">
+            <div class="route-select-header" id="routeSelectToggle">
+                <div class="route-header-left">
+                    <svg class="route-toggle-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path d="M9 18L15 12L9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" />
+                    </svg>
+                    <span>选择诗人路线</span>
+                </div>
+                <button class="route-close-btn" id="routePanelCloseBtn" title="关闭">×</button>
+            </div>
+            <div class="route-select-body" id="routeSelectBody">
+                <div class="route-select-content" id="routeSelectContent">
+                    <!-- 动态生成复选框 -->
+                </div>
+                <div class="route-select-footer">
+                    <button class="route-btn route-btn-primary" id="routeSelectConfirm">确认</button>
+                    <button class="route-btn" id="routeSelectAll">全选</button>
+                    <button class="route-btn" id="routeSelectNone">全不选</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="search-panel">
+        <select id="searchType">
+            <option value="search">全局搜诗</option>
+            <option value="city">搜城市</option>
+            <option value="author">搜诗人</option>
+        </select>
+        <input type="text" id="citySearch" placeholder="输入关键字..." />
+        <button id="searchBtn">探索</button>
+    </div>
+
+    <!-- 动态诗词墙 -->
+    <div id="poemSidePanel" class="poem-list-panel" style="display:none; width: 350px; z-index: 2000;">
+        <div class="poem-panel-header"
+            style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0, 255, 255, 0.2); padding-bottom:10px; margin-bottom:15px;">
+            <h2 id="poemPanelTitle"
+                style="margin:0; font-size:18px; color:#00ffff; text-shadow:0 0 8px rgba(0,255,255,0.4);">加载中...</h2>
+            <button id="closePoemPanelBtn" class="chart-close-btn"
+                style="border:none;background:transparent;color:#00ffff;cursor:pointer;font-size:20px;">×</button>
+        </div>
+        <div id="poemPanelContent" style="max-height: 60vh; overflow-y: auto; padding-right: 5px;">
+            <!-- 诗词卡片将在这里动态生成 -->
+        </div>
+        <div id="poemPanelFooter" style="text-align:center; padding-top:15px; display:none;">
+            <button id="loadMorePoemsBtn"
+                style="background:linear-gradient(135deg, rgba(0,255,255,0.1), rgba(0,150,255,0.1)); border:1px solid rgba(0,255,255,0.3); color:#fff; padding:6px 15px; border-radius:4px; cursor:pointer;">加载更多</button>
+        </div>
+    </div>
+
+    <!-- 空间分析结果列表 -->
+    <div id="spatialResultPanel" class="poem-list-panel" style="display:none; width: 350px; right: 400px; z-index: 1000; box-shadow: -5px 0 20px rgba(0,255,255,0.1);">
+        <div class="poem-panel-header"
+            style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0, 255, 255, 0.2); padding-bottom:10px; margin-bottom:15px;">
+            <h2 id="spatialResultTitle"
+                style="margin:0; font-size:18px; color:#00ffff; text-shadow:0 0 8px rgba(0,255,255,0.4);">空间区域分析发现</h2>
+            <button id="closeSpatialResultBtn" class="chart-close-btn"
+                style="border:none;background:transparent;color:#00ffff;cursor:pointer;font-size:20px;">×</button>
+        </div>
+        
+        <div id="spatialResultSummary" style="color:#dcedf0; font-size:13px; margin-bottom:15px; background: rgba(0,255,255,0.1); padding: 10px; border-radius: 6px; border: 1px solid rgba(0,255,255,0.2);">
+            区域内囊括城市 <span id="spatialCityCount" style="color:#0ff; font-weight:bold; font-size:15px;">0</span> 个，<br/>
+            涉及千古诗篇 <span id="spatialPoemCount" style="color:#0ff; font-weight:bold; font-size:15px;">0</span> 首。
+        </div>
+
+        <div id="spatialResultContent" style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">
+            <!-- 城市卡片将在这里动态生成 -->
+        </div>
+    </div>
+
+    <script>
+        // 初始化应用
+        let viewer, routeEntities = [];
+
+        // 诗人路线颜色映射（颜色不存数据库，在前端维护）
+        const POET_COLORS = {
+            '苏轼': Cesium.Color.YELLOW,
+            '刘禹锡': Cesium.Color.CYAN,
+            '李白': Cesium.Color.ORANGE,
+            '杜甫': Cesium.Color.GREEN,
+            '白居易': Cesium.Color.MAGENTA,
+            '王维': Cesium.Color.PURPLE
+        };
+
+        /**
+         * 从后端加载城市和路线数据，赋值给全局变量
+         */
+        async function loadDataFromAPI() {
+            try {
+                // 并行请求城市数据和路线数据
+                const [citiesRes, routesRes] = await Promise.all([
+                    fetch('PoemApiHandler.ashx?type=cities'),
+                    fetch('PoemApiHandler.ashx?type=routes')
+                ]);
+
+                // 处理城市数据
+                const citiesJson = await citiesRes.json();
+                window.poetryData = citiesJson.map(c => ({
+                    name: c.name,
+                    lat: c.lat,
+                    lon: c.lon,
+                    count: c.count,
+                    yearData: c.yearData || {}
+                }));
+
+                // 定义 getCountByYear 工具函数
+                window.getCountByYear = function (yearData, targetYear) {
+                    if (!yearData) return 0;
+                    const years = Object.keys(yearData).map(Number).sort((a, b) => a - b);
+                    let result = 0;
+                    for (let i = 0; i < years.length; i++) {
+                        if (years[i] <= targetYear) {
+                            result = yearData[years[i]];
+                        } else {
+                            break;
+                        }
+                    }
+                    return result;
+                };
+
+                // 处理路线数据：附加 Cesium 颜色
+                const routesJson = await routesRes.json();
+                window.allRoutes = routesJson.map(r => ({
+                    name: r.name,
+                    path: r.path,
+                    color: POET_COLORS[r.name] || Cesium.Color.WHITE
+                }));
+
+                console.log(`[DataAPI] 已加载 ${window.poetryData.length} 个城市, ${window.allRoutes.length} 条路线`);
+            } catch (err) {
+                console.error('[DataAPI] 数据加载失败:', err);
+                // 回退：使用空数组避免页面崩溃
+                window.poetryData = window.poetryData || [];
+                window.allRoutes = window.allRoutes || [];
+            }
+        }
+
+        $(document).ready(async function () {
+            // 初始化地图
+            viewer = MapManager.init('cesiumContainer');
+
+            // 从 API 加载数据
+            await loadDataFromAPI();
+
+            // 初始化 UI
+            UIManager.init();
+            TimelineManager.init(viewer);
+            TimelineIntegration.init(viewer);
+            
+            // 初始化空间分析管理器
+            if (window.SpatialAnalysisManager) {
+                window.SpatialAnalysisManager.init(viewer);
+            }
+
+            // 绘制真实政区边界（中国全图）
+            if (window.loadAuthenticBoundary) {
+                window.loadAuthenticBoundary(viewer);
+            }
+
+            // 启动时间更新
+            setInterval(updateTime, 1000);
+            updateTime();
+
+            // 诗词数据
+            const poetryData = window.poetryData;
+
+            // 路线配置数组
+            const allRoutes = window.allRoutes;
+
+            // 路线选择状态
+            let selectedRoutes = {};
+
+            // 初始化路线选择状态（默认都不选中）
+            allRoutes.forEach(route => {
+                selectedRoutes[route.name] = false;
+            });
+
+            // 生成路线选择面板内容
+            function generateRouteSelectPanel() {
+                const content = document.getElementById('routeSelectContent');
+                content.innerHTML = '';
+
+                allRoutes.forEach(route => {
+                    const routeItem = document.createElement('div');
+                    routeItem.className = 'route-select-item';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `route_${route.name}`;
+                    checkbox.value = route.name;
+                    checkbox.checked = selectedRoutes[route.name] || false;
+                    checkbox.addEventListener('change', function () {
+                        selectedRoutes[route.name] = this.checked;
+                    });
+
+                    const label = document.createElement('label');
+                    label.htmlFor = `route_${route.name}`;
+                    label.className = 'route-select-label';
+
+                    const colorDot = document.createElement('span');
+                    colorDot.className = 'route-color-dot';
+                    colorDot.style.backgroundColor = route.color.toCssColorString();
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.textContent = route.name;
+                    nameSpan.className = 'route-name';
+
+                    label.appendChild(colorDot);
+                    label.appendChild(nameSpan);
+
+                    routeItem.appendChild(checkbox);
+                    routeItem.appendChild(label);
+
+                    content.appendChild(routeItem);
+                });
+            }
+
+            // 切换路线选择面板展开/收起
+            function toggleRouteSelectPanel() {
+                const panel = document.getElementById('routeSelectPanel');
+                if (panel.classList.contains('expanded')) {
+                    panel.classList.remove('expanded');
+                    panel.classList.add('collapsed');
+                } else {
+                    panel.classList.remove('collapsed');
+                    panel.classList.add('expanded');
+                    generateRouteSelectPanel();
+                }
+            }
+
+            // 显示路线选择面板（展开）
+            function showRouteSelectPanel() {
+                const panel = document.getElementById('routeSelectPanel');
+                panel.classList.remove('collapsed');
+                panel.classList.add('expanded');
+                generateRouteSelectPanel();
+            }
+
+            // 隐藏路线选择面板（收起）
+            function hideRouteSelectPanel() {
+                const panel = document.getElementById('routeSelectPanel');
+                panel.classList.remove('expanded');
+                panel.classList.add('collapsed');
+            }
+
+            // 路线按钮点击事件
+            const btnRoute = document.getElementById('btnRoute');
+            const routeSelectPanel = document.getElementById('routeSelectPanel');
+            const routeSelectToggle = document.getElementById('routeSelectToggle');
+            const routePanelCloseBtn = document.getElementById('routePanelCloseBtn');
+            const routeSelectConfirm = document.getElementById('routeSelectConfirm');
+            const routeSelectAll = document.getElementById('routeSelectAll');
+            const routeSelectNone = document.getElementById('routeSelectNone');
+
+            // 初始化面板状态为收起
+            routeSelectPanel.classList.add('collapsed');
+
+            // 监听 UI Manager 请求生成面板内容的事件
+            document.addEventListener('RequestGenerateRoutePanel', () => {
+                generateRouteSelectPanel();
+            });
+
+            // 确认选择
+            routeSelectConfirm.addEventListener('click', () => {
+                // 检查是否有选中的路线
+                const hasSelected = Object.values(selectedRoutes).some(selected => selected);
+
+                if (hasSelected) {
+                    btnRoute.classList.add('active');
+                    showRoutes();
+                } else {
+                    btnRoute.classList.remove('active');
+                    hideRoutes();
+                }
+
+                // 确认后自动收起面板
+                hideRouteSelectPanel();
+            });
+
+            // 全选
+            routeSelectAll.addEventListener('click', () => {
+                allRoutes.forEach(route => {
+                    selectedRoutes[route.name] = true;
+                });
+                generateRouteSelectPanel();
+            });
+
+            // 全不选
+            routeSelectNone.addEventListener('click', () => {
+                allRoutes.forEach(route => {
+                    selectedRoutes[route.name] = false;
+                });
+                generateRouteSelectPanel();
+                btnRoute.classList.remove('active');
+                hideRoutes();
+            });
+
+            // 隐藏路线函数
+            function hideRoutes() {
+                try {
+                    if (!routeEntities) {
+                        routeEntities = [];
+                        return;
+                    }
+
+                    routeEntities.forEach(entity => {
+                        if (entity instanceof Cesium.ScreenSpaceEventHandler) {
+                            entity.destroy();
+                        } else if (entity && viewer.entities.contains(entity)) {
+                            viewer.entities.remove(entity);
+                        }
+                    });
+
+                    routeEntities.length = 0;
+                } catch (error) {
+                    console.error('隐藏路线时出错:', error);
+                }
+            }
+
+            // 修改显示路线函数 - 只显示选中的诗人路线
+            function showRoutes() {
+                try {
+                    // 先清除现有路线
+                    hideRoutes();
+
+                    // 获取选中的路线
+                    const selectedRouteNames = Object.keys(selectedRoutes).filter(name => selectedRoutes[name]);
+
+                    if (selectedRouteNames.length === 0) {
+                        return; // 没有选中的路线，直接返回
+                    }
+
+                    // 只显示选中的路线
+                    allRoutes.forEach(route => {
+                        if (selectedRoutes[route.name]) {
+                            const routeColor = route.color || Cesium.Color.WHITE;
+                            
+                            // 1. 绘制高质感发光路线
+                            const routeLine = viewer.entities.add({
+                                polyline: {
+                                    positions: Cesium.Cartesian3.fromDegreesArray(
+                                        route.path.reduce((arr, point) => [...arr, point.location[0], point.location[1]], [])
+                                    ),
+                                    width: 8,
+                                    material: new Cesium.PolylineGlowMaterialProperty({
+                                        glowPower: 0.3,
+                                        taperPower: 1.0,
+                                        color: routeColor.withAlpha(0.9)
+                                    }),
+                                    clampToGround: true
+                                },
+                                name: route.name + '路线'
+                            });
+                            routeEntities.push(routeLine);
+
+                            // 序号图标表 (带圈序号)
+                            const indexIcons = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩', '⑪', '⑫', '⑬', '⑭', '⑮', '⑯', '⑰', '⑱', '⑲', '⑳'];
+
+                            // 2. 绘制路径节点
+                            route.path.forEach((point, idx) => {
+                                const pos = Cesium.Cartesian3.fromDegrees(point.location[0], point.location[1]);
+                                
+                                // 基础数据对象
+                                const metadata = {
+                                    routePointData: point,
+                                    poetName: route.name
+                                };
+
+                                // 主标记点 + 标签
+                                const pointEntity = viewer.entities.add({
+                                    position: pos,
+                                    point: {
+                                        pixelSize: 14,
+                                        color: Cesium.Color.WHITE,
+                                        outlineColor: routeColor,
+                                        outlineWidth: 4,
+                                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                                        disableDepthTestDistance: Number.POSITIVE_INFINITY
+                                    },
+                                    label: {
+                                        text: (indexIcons[idx] || (idx + 1)) + ' ' + point.name,
+                                        font: 'bold 16px "Microsoft YaHei", sans-serif',
+                                        fillColor: Cesium.Color.WHITE,
+                                        outlineColor: Cesium.Color.BLACK,
+                                        outlineWidth: 4,
+                                        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                                        verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                                        pixelOffset: new Cesium.Cartesian2(0, -18),
+                                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                                        disableDepthTestDistance: Number.POSITIVE_INFINITY
+                                    }
+                                });
+                                Object.assign(pointEntity, metadata);
+
+                                // 静态装饰环 (取消闪烁特效)
+                                const pulseEntity = viewer.entities.add({
+                                    position: pos,
+                                    point: {
+                                        pixelSize: 22,
+                                        color: routeColor.withAlpha(0.35),
+                                        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+                                        disableDepthTestDistance: Number.POSITIVE_INFINITY
+                                    }
+                                });
+                                Object.assign(pulseEntity, metadata);
+                                
+                                routeEntities.push(pointEntity, pulseEntity);
+                            });
+                        }
+                    });
+
+                    // 交互处理器
+                    const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+                    
+                    // 鼠标点击：弹出诗词
+                    clickHandler.setInputAction(function (click) {
+                        const picked = viewer.scene.pick(click.position);
+                        if (Cesium.defined(picked)) {
+                            // 打印拾取对象以便调试
+                            console.log('[RouteClick] Picked:', picked.id);
+                            
+                            const entity = picked.id;
+                            if (entity && entity.routePointData) {
+                                const data = entity.routePointData;
+                                const poet = entity.poetName;
+                                console.log('[RouteClick] Showing poems for:', data.name);
+                                
+                                window.showLocationPoems({
+                                    ...data,
+                                    customTitle: `${poet} 在 ${data.name} 的足迹`
+                                });
+                            }
+                        }
+                    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+                    // 鼠标悬停：改变光标
+                    clickHandler.setInputAction(function (movement) {
+                        const picked = viewer.scene.pick(movement.endPosition);
+                        if (Cesium.defined(picked) && picked.id && picked.id.routePointData) {
+                            viewer.scene.canvas.style.cursor = 'pointer';
+                        } else {
+                            viewer.scene.canvas.style.cursor = 'default';
+                        }
+                    }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
+
+                    routeEntities.push(clickHandler);
+                    console.log(`[Route] 渲染完成，共加载 ${selectedRouteNames.length} 位诗人路线`);
+
+                } catch (error) {
+                    console.error('显示路线时出错:', error);
+                }
+            }
+
+            // 显示地点诗篇的函数
+
+
+            // 更新相关样式
+            const style = document.createElement('style');
+            style.textContent = `
+            #heatmapContainer canvas {
+                filter: contrast(120%) brightness(110%) saturate(130%);
+            }
+            .download-btn {
+                background: #00ffff;
+                color: #000;
+                border: none;
+                padding: 5px 15px;
+                border-radius: 4px;
+                cursor: pointer;
+                margin-right: 10px;
+                transition: all 0.3s ease;
+            }
+            .download-btn:hover {
+                background: #66ffff;
+                box-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            }
+            .toast {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 255, 255, 0.8);
+                color: #000;
+                padding: 10px 20px;
+                border-radius: 4px;
+                z-index: 1001;
+                animation: fadeInOut 2s ease;
+            }
+            @keyframes fadeInOut {
+                0% { opacity: 0; transform: translate(-50%, 20px); }
+                15% { opacity: 1; transform: translate(-50%, 0); }
+                85% { opacity: 1; transform: translate(-50%, 0); }
+                100% { opacity: 0; transform: translate(-50%, -20px); }
+            }
+            button {
+                background: rgba(0,255,255,0.1);
+                border: 1px solid rgba(0,255,255,0.3);
+                color: #00ffff;
+                padding: 8px 16px;
+                margin: 5px;
+                cursor: pointer;
+                border-radius: 4px;
+                transition: all 0.3s;
+                min-width: 100px;
+                font-weight: 500;
+                letter-spacing: 1px;
+                text-transform: uppercase;
+                font-size: 12px;
+            }
+            button:hover {
+                background: rgba(0,255,255,0.2);
+                border-color: #00ffff;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 15px rgba(0,255,255,0.4);
+            }
+            button:active {
+                background: rgba(0,255,255,0.3);
+                transform: translateY(0);
+                box-shadow: 0 2px 5px rgba(0,255,255,0.2);
+            }
+            button.active {
+                background: rgba(0,255,255,0.3);
+                border-color: #00ffff;
+                box-shadow: 0 0 20px rgba(0,255,255,0.4);
+                text-shadow: 0 0 5px rgba(0,255,255,0.5);
+            }
+            .control-panel {
+                background: rgba(0,27,70,0.8);
+                backdrop-filter: blur(5px);
+                padding: 15px;
+                border-radius: 8px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+                border: 1px solid rgba(0,255,255,0.1);
+            }
+        `;
+            document.head.appendChild(style);
+
+            // 更新事件监听
+            document.getElementById('searchBtn').addEventListener('click', searchPoetry);
+            document.getElementById('citySearch').addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    searchPoetry();
+                }
+            });
+
+            // 添加错误提示函数
+            function showErrorMessage(message) {
+                let poemPanel = document.getElementById('poemPanel');
+                if (!poemPanel) {
+                    poemPanel = document.createElement('div');
+                    poemPanel.id = 'poemPanel';
+                    document.body.appendChild(poemPanel);
+                }
+                poemPanel.innerHTML = `
+                <div class="poem-list">
+                    <h2>错误</h2>
+                    <div class="error-message">${message}</div>
+                    <div class="close-btn">×</div>
+                </div>
+            `;
+
+                const closeBtn = poemPanel.querySelector('.close-btn');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', () => {
+                        poemPanel.remove();
+                    });
+                }
+            }
+
+            // 添加无结果提示函数
+            function showNoResultMessage(keyword, searchType) {
+                let poemPanel = document.getElementById('poemPanel');
+                if (!poemPanel) {
+                    poemPanel = document.createElement('div');
+                    poemPanel.id = 'poemPanel';
+                    document.body.appendChild(poemPanel);
+                }
+                poemPanel.innerHTML = `
+                <div class="poem-list">
+                    <h2>搜索结果</h2>
+                    <div class="no-result">
+                        未找到${searchType === 'city' ? '城市' : '诗人'}"${keyword}"的相关诗词
+                    </div>
+                    <div class="close-btn">×</div>
+                </div>
+            `;
+
+                const closeBtn = poemPanel.querySelector('.close-btn');
+                if (closeBtn) {
+                    closeBtn.addEventListener('click', () => {
+                        poemPanel.remove();
+                    });
+                }
+            }
+
+            // 添加加载状态显示
+            function showLoading() {
+                let poemPanel = document.getElementById('poemPanel');
+                if (!poemPanel) {
+                    poemPanel = document.createElement('div');
+                    poemPanel.id = 'poemPanel';
+                    document.body.appendChild(poemPanel);
+                }
+                poemPanel.innerHTML = `
+                <div class="poem-list">
+                    <h2>搜索中</h2>
+                    <div class="loading">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">正在搜索...</div>
+                    </div>
+                </div>
+            `;
+            }
+
+            function initECharts() {
+                const dynastyLineChart = echarts.init(document.getElementById('dynastyLineChart'));
+                const cityBarChart = echarts.init(document.getElementById('cityBarChart'));
+                const authorPieChart = echarts.init(document.getElementById('authorPieChart'));
+
+                window.dynastyLineChart = dynastyLineChart;
+                window.cityBarChart = cityBarChart;
+                window.authorPieChart = authorPieChart;
+
+                fetch('PoemApiHandler.ashx?type=stats')
+                    .then(r => r.json())
+                    .then(data => {
+                        const dynastyData = {};
+                        data.dynastyStats.forEach(d => { dynastyData[d.dynasty || "佚名"] = d.count; });
+
+                        const cityData = {};
+                        data.cityStats.forEach(c => { cityData[c.city] = c.count; });
+
+                        const authorData = data.topAuthors.map(a => ({ name: a.author || "佚名", value: a.count }));
+
+                        const commonOptions = {
+                            textStyle: {
+                                color: '#fff',
+                                fontSize: 10  // 缩小字体
+                            },
+                            title: {
+                                textStyle: {
+                                    color: '#00ffff',
+                                    fontSize: 10  // 缩小标题字体
+                                },
+                                left: 'center'
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                                borderColor: '#00ffff',
+                                borderWidth: 1,
+                                textStyle: {
+                                    fontSize: 9  // 缩小提示框字体
+                                }
+                            },
+                            grid: {
+                                top: 30,
+                                right: 20,
+                                bottom: 30,
+                                left: 60,
+                                containLabel: true
+                            }
+                        };
+
+                        dynastyLineChart.setOption({
+                            ...commonOptions,
+                            title: {
+                                ...commonOptions.title,
+                                text: '不同朝代的古诗词量'
+                            },
+                            xAxis: {
+                                type: 'category',
+                                data: Object.keys(dynastyData),
+                                axisLabel: {
+                                    color: '#fff',
+                                    fontSize: 9  // 缩小坐标轴字体
+                                }
+                            },
+                            yAxis: {
+                                type: 'value',
+                                axisLabel: {
+                                    color: '#fff',
+                                    fontSize: 9  // 缩小坐标轴字体
+                                }
+                            },
+                            series: [{
+                                data: Object.values(dynastyData),
+                                type: 'line',
+                                smooth: true,
+                                itemStyle: {
+                                    color: '#00ffff'
+                                },
+                                lineStyle: {
+                                    width: 1.5  // 缩小线条宽度
+                                }
+                            }],
+                            backgroundColor: 'transparent'
+                        });
+
+                        cityBarChart.setOption({
+                            ...commonOptions,
+                            title: {
+                                ...commonOptions.title,
+                                text: '不同城市的古诗词排行榜'
+                            },
+                            xAxis: {
+                                type: 'category',
+                                data: Object.keys(cityData),
+                                axisLabel: {
+                                    color: '#fff',
+                                    fontSize: 9  // 缩小坐标轴字体
+                                }
+                            },
+                            yAxis: {
+                                type: 'value',
+                                axisLabel: {
+                                    color: '#fff',
+                                    fontSize: 9  // 缩小坐标轴字体
+                                }
+                            },
+                            series: [{
+                                data: Object.values(cityData),
+                                type: 'bar',
+                                itemStyle: {
+                                    color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                        { offset: 0, color: '#00ffff' },
+                                        { offset: 1, color: '#0066ff' }
+                                    ])
+                                },
+                                barWidth: '40%'  // 缩小柱状图宽度
+                            }],
+                            backgroundColor: 'transparent'
+                        });
+
+                        authorPieChart.setOption({
+                            ...commonOptions,
+                            title: {
+                                ...commonOptions.title,
+                                text: '不同诗人的诗词数量'
+                            },
+                            series: [{
+                                name: '诗人',
+                                type: 'pie',
+                                radius: ['25%', '45%'],  // 缩小饼图半径
+                                data: authorData,
+                                label: {
+                                    fontSize: 9  // 缩小标签字体
+                                },
+                                emphasis: {
+                                    itemStyle: {
+                                        shadowBlur: 8,  // 缩小阴影
+                                        shadowOffsetX: 0,
+                                        shadowColor: 'rgba(0, 0, 0, 0.5)'
+                                    }
+                                }
+                            }],
+                            backgroundColor: 'transparent'
+                        });
+
+                        window.addEventListener('resize', () => {
+                            dynastyLineChart.resize();
+                            cityBarChart.resize();
+                            authorPieChart.resize();
+                        });
+                    });
+            }
+
+            $(document).ready(function () {
+                // 确保右侧图标面板可见
+                const rightIconPanel = document.querySelector('.right-icon-panel');
+                if (rightIconPanel) {
+                    rightIconPanel.style.position = 'fixed';
+                    rightIconPanel.style.right = '20px';
+                    rightIconPanel.style.top = '50%';
+                    rightIconPanel.style.transform = 'translateY(-50%)';
+                    rightIconPanel.style.zIndex = '99999';
+                    rightIconPanel.style.background = 'rgba(0, 27, 70, 0.98)';
+                    rightIconPanel.style.border = '2px solid #00ffff';
+                    rightIconPanel.style.boxShadow = '0 0 30px rgba(0, 255, 255, 0.8)';
+                    rightIconPanel.style.display = 'flex';
+                    rightIconPanel.style.flexDirection = 'column';
+                    rightIconPanel.style.gap = '8px';
+                    rightIconPanel.style.padding = '10px 8px';
+                    rightIconPanel.style.borderRadius = '8px';
+                    rightIconPanel.style.pointerEvents = 'auto';
+                    console.log('右侧图标面板已设置样式');
+                } else {
+                    console.error('未找到右侧图标面板元素');
+                }
+
+                // 确保所有图表默认隐藏
+                const dynastyChartPanel = document.getElementById('dynastyChartPanel');
+                const cityChartPanel = document.getElementById('cityChartPanel');
+                const authorChartPanel = document.getElementById('authorChartPanel');
+
+                [dynastyChartPanel, cityChartPanel, authorChartPanel].forEach(panel => {
+                    if (panel) {
+                        panel.classList.remove('visible');
+                        panel.style.display = 'none';
+                    }
+                });
+
+                initECharts();
+
+                // 图表状态管理
+                const chartStates = {
+                    dynasty: false,
+                    city: false,
+                    author: false
+                };
+
+                // 显示/隐藏图表的通用函数
+                function toggleChart(chartType, panel, button) {
+                    const isVisible = chartStates[chartType];
+
+                    if (isVisible) {
+                        // 隐藏图表
+                        panel.classList.remove('visible');
+                        button.classList.remove('active');
+                        chartStates[chartType] = false;
+                        setTimeout(() => {
+                            panel.style.display = 'none';
+                        }, 400);
+                    } else {
+                        // 显示图表
+                        panel.style.display = 'block';
+                        requestAnimationFrame(() => {
+                            panel.classList.add('visible');
+                            button.classList.add('active');
+                            chartStates[chartType] = true;
+                            // 图表需要重新调整大小
+                            setTimeout(() => {
+                                if (chartType === 'dynasty' && window.dynastyLineChart) {
+                                    window.dynastyLineChart.resize();
+                                } else if (chartType === 'city' && window.cityBarChart) {
+                                    window.cityBarChart.resize();
+                                } else if (chartType === 'author' && window.authorPieChart) {
+                                    window.authorPieChart.resize();
+                                }
+                            }, 400);
+                        });
+                    }
+                }
+
+                // 绑定图表按钮事件
+                const btnDynastyChart = document.getElementById('btnDynastyChart');
+                const btnCityChart = document.getElementById('btnCityChart');
+                const btnAuthorChart = document.getElementById('btnAuthorChart');
+
+                if (btnDynastyChart && dynastyChartPanel) {
+                    btnDynastyChart.addEventListener('click', function () {
+                        toggleChart('dynasty', dynastyChartPanel, btnDynastyChart);
+                    });
+                }
+
+                if (btnCityChart && cityChartPanel) {
+                    btnCityChart.addEventListener('click', function () {
+                        toggleChart('city', cityChartPanel, btnCityChart);
+                    });
+                }
+
+                if (btnAuthorChart && authorChartPanel) {
+                    btnAuthorChart.addEventListener('click', function () {
+                        toggleChart('author', authorChartPanel, btnAuthorChart);
+                    });
+                }
+
+                // 绑定关闭按钮事件
+                document.querySelectorAll('.chart-close-btn').forEach(btn => {
+                    btn.addEventListener('click', function () {
+                        const chartType = this.getAttribute('data-chart');
+                        let panel, button;
+
+                        if (chartType === 'dynasty') {
+                            panel = dynastyChartPanel;
+                            button = btnDynastyChart;
+                        } else if (chartType === 'city') {
+                            panel = cityChartPanel;
+                            button = btnCityChart;
+                        } else if (chartType === 'author') {
+                            panel = authorChartPanel;
+                            button = btnAuthorChart;
+                        }
+
+                        if (panel && button) {
+                            toggleChart(chartType, panel, button);
+                        }
+                    });
+                });
+            });
+
+            // 提示：底图图层切换逻辑已被完全移交至 mapManager.js 和 uiManager.js处理，此处已清理重复代码
+
+            // 添加提示框显示函数
+            function showToast(message) {
+                const toast = document.createElement('div');
+                toast.className = 'toast';
+                toast.textContent = message;
+                document.body.appendChild(toast);
+
+                // 2秒后自动移除提示
+                setTimeout(() => {
+                    toast.remove();
+                }, 2000);
+            }
+
+
+
+
+
+
+        });
+
+        // ================= 防丢失：全局交互函数库 =================
+        window.currentSearchData = null; // { type, keyword, page, size }
+
+        // 绘制中国边界高亮效果：Canvas 2D 遮罩实现精准边界
+        // 原理：全屏暗色填充 → destination-out 擦除中国形状 → 绘制发光边界线
+        window.loadAuthenticBoundary = function(viewer) {
+            var geoJsonUrl = 'https://geo.datav.aliyun.com/areas_v3/bound/100000.json';
+
+            // —— 创建遮罩 Canvas ——
+            var maskCanvas = document.createElement('canvas');
+            maskCanvas.id = 'chinaMaskCanvas';
+            maskCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3;opacity:0;transition:opacity 0.8s ease;';
+            var cesiumEl = document.getElementById('cesiumContainer');
+            cesiumEl.parentElement.insertBefore(maskCanvas, cesiumEl.nextSibling);
+
+            var ctx = maskCanvas.getContext('2d');
+            var chinaCartesians = []; // 预计算的 Cartesian3 坐标数组组
+            var isMoving = false;
+
+            function syncSize() {
+                maskCanvas.width = maskCanvas.offsetWidth;
+                maskCanvas.height = maskCanvas.offsetHeight;
+            }
+
+            function drawMask() {
+                var w = maskCanvas.width, h = maskCanvas.height;
+                if (w === 0 || h === 0) { syncSize(); w = maskCanvas.width; h = maskCanvas.height; }
+
+                ctx.clearRect(0, 0, w, h);
+
+                // 1) 全屏填充暗色
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.fillStyle = 'rgba(0, 5, 15, 0.68)';
+                ctx.fillRect(0, 0, w, h);
+
+                // 2) 用 destination-out 精准擦除中国区域
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+
+                for (var p = 0; p < chinaCartesians.length; p++) {
+                    var arr = chinaCartesians[p];
+                    ctx.beginPath();
+                    var started = false;
+
+                    for (var i = 0; i < arr.length; i++) {
+                        var sp = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, arr[i]);
+                        if (sp) {
+                            if (!started) { ctx.moveTo(sp.x, sp.y); started = true; }
+                            else { ctx.lineTo(sp.x, sp.y); }
+                        }
+                    }
+                    if (started) { ctx.closePath(); ctx.fill(); }
+                }
+
+                // 3) 绘制发光边界线
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+                ctx.lineWidth = 1.5;
+                ctx.shadowColor = 'rgba(0, 255, 255, 0.8)';
+                ctx.shadowBlur = 6;
+
+                for (var p = 0; p < chinaCartesians.length; p++) {
+                    var arr = chinaCartesians[p];
+                    ctx.beginPath();
+                    var started = false;
+
+                    for (var i = 0; i < arr.length; i++) {
+                        var sp = Cesium.SceneTransforms.wgs84ToWindowCoordinates(viewer.scene, arr[i]);
+                        if (sp) {
+                            if (!started) { ctx.moveTo(sp.x, sp.y); started = true; }
+                            else { ctx.lineTo(sp.x, sp.y); }
+                        }
+                    }
+                    if (started) { ctx.closePath(); ctx.stroke(); }
+                }
+                ctx.shadowBlur = 0;
+            }
+
+            // —— 加载中国边界 GeoJSON ——
+            fetch(geoJsonUrl)
+                .then(function(res) { return res.json(); })
+                .then(function(geoJson) {
+                    geoJson.features.forEach(function(feature) {
+                        var geom = feature.geometry;
+                        if (!geom) return;
+
+                        var extractRing = function(polyCoords) {
+                            var ring = polyCoords[0];
+                            if (!ring || ring.length < 4) return;
+                            var positions = [];
+                            for (var i = 0; i < ring.length; i++) {
+                                positions.push(Cesium.Cartesian3.fromDegrees(ring[i][0], ring[i][1]));
+                            }
+                            chinaCartesians.push(positions);
+                        };
+
+                        if (geom.type === 'Polygon') {
+                            extractRing(geom.coordinates);
+                        } else if (geom.type === 'MultiPolygon') {
+                            geom.coordinates.forEach(function(poly) { extractRing(poly); });
+                        }
+                    });
+
+                    // 等待 Cesium 完成第一帧渲染后才画遮罩
+                    // （必须等第一帧：否则 wgs84ToWindowCoordinates 全部返回 null，destination-out 什么都擦不掉）
+                    var firstRenderDone = false;
+
+                    viewer.scene.postRender.addEventListener(function() {
+                        if (!firstRenderDone) {
+                            firstRenderDone = true;
+                            syncSize();
+                            drawMask();
+                            // 首帧绘制完成后淡入
+                            requestAnimationFrame(function() {
+                                maskCanvas.style.opacity = '1';
+                            });
+                        } else if (isMoving) {
+                            drawMask();
+                        }
+                    });
+
+                    // 相机运动期间持续重绘，静止后补一次终态
+                    viewer.camera.moveStart.addEventListener(function() { isMoving = true; });
+                    viewer.camera.moveEnd.addEventListener(function() {
+                        isMoving = false;
+                        drawMask();
+                    });
+
+                    window.addEventListener('resize', function() { syncSize(); drawMask(); });
+
+                    console.log('[Boundary] Canvas 精准遮罩完成，共 ' + chinaCartesians.length + ' 个多边形');
+                })
+                .catch(function(err) {
+                    console.warn('[Boundary] 边界加载失败:', err);
+                });
+        };
+
+        window.searchPoetry = function () {
+            const searchType = document.getElementById('searchType') ? document.getElementById('searchType').value : 'search';
+            const searchInput = document.getElementById('citySearch');
+            let keyword = searchInput ? searchInput.value.trim() : '';
+
+            if (!keyword && searchType !== 'search') {
+                // showErrorMessage('请输入搜索关键词');
+                alert('请输入搜索关键词');
+                return;
+            }
+
+            if (searchType === 'search' && !keyword) keyword = "随心推荐，全局探索";
+
+            window.currentSearchData = {
+                type: searchType,
+                keyword: keyword,
+                page: 1,
+                size: 15
+            };
+
+            openPoemPanel(`搜索: ${keyword}`);
+            const panelContent = document.getElementById('poemPanelContent');
+            if (panelContent) panelContent.innerHTML = '<div style="text-align:center; padding:20px;">正在加载数据...</div>';
+
+            loadPoemData(true);
+        }
+
+        window.loadPoemData = function (isFirstPage) {
+            if (!window.currentSearchData) return;
+
+            $.ajax({
+                url: "PoemApiHandler.ashx",
+                type: "GET",
+                data: {
+                    type: window.currentSearchData.type,
+                    [window.currentSearchData.type === 'search' ? 'keyword' : window.currentSearchData.type]: window.currentSearchData.keyword,
+                    page: window.currentSearchData.page,
+                    size: window.currentSearchData.size
+                },
+                dataType: "json",
+                success: function (data) {
+                    try {
+                        const panelContent = document.getElementById('poemPanelContent');
+                        const panelFooter = document.getElementById('poemPanelFooter');
+                        if (!panelContent) return;
+
+                        if (data.error) {
+                            panelContent.innerHTML = `<div style="color:red; margin:10px;">${data.error}</div>`;
+                            return;
+                        }
+
+                        let items = data.items || data;
+
+                        if (!items || items.length === 0) {
+                            if (isFirstPage) {
+                                panelContent.innerHTML = '<div style="color:#aaa; text-align:center; margin-top:20px;">未找到结果</div>';
+                                if (panelFooter) panelFooter.style.display = 'none';
+                            }
+                            return;
+                        }
+
+                        if (isFirstPage) {
+                            panelContent.innerHTML = '';
+                        }
+
+                        displayPoemsInPanel(items);
+
+                        if (items.length < window.currentSearchData.size) {
+                            if (panelFooter) panelFooter.style.display = 'none';
+                        } else {
+                            if (panelFooter) panelFooter.style.display = 'block';
+                        }
+
+                        if (isFirstPage && window.currentSearchData.type === 'city') {
+                            const city = window.poetryData && window.poetryData.find(p => p.name === window.currentSearchData.keyword);
+                            if (city && typeof viewer !== 'undefined') {
+                                viewer.camera.flyTo({
+                                    destination: Cesium.Cartesian3.fromDegrees(city.lon, city.lat, 100000.0),
+                                    duration: 2.0
+                                });
+                            }
+                        }
+                    } catch (e) {
+                        console.error(e);
+                    }
+                },
+                error: function () {
+                    const panelContent = document.getElementById('poemPanelContent');
+                    if (panelContent) panelContent.innerHTML = '<div style="color:red; margin:10px;">加载失败，请检查网络</div>';
+                }
+            });
+        }
+
+        window.openPoemPanel = function (title) {
+            const panel = document.getElementById('poemSidePanel');
+            if (panel) {
+                panel.style.display = 'flex';
+                panel.style.flexDirection = 'column';
+                document.getElementById('poemPanelTitle').innerText = title || "古诗词";
+            }
+        }
+
+        window.displayPoemsInPanel = function (poems) {
+            const container = document.getElementById('poemPanelContent');
+            if (!container) return;
+
+            poems.forEach(poem => {
+                const el = document.createElement('div');
+                el.className = 'poem-item';
+                el.style.cursor = 'pointer';
+                el.style.padding = '15px';
+                el.style.marginBottom = '15px';
+                el.style.background = 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)';
+                el.style.border = '1px solid rgba(0, 255, 255, 0.2)';
+                el.style.borderRadius = '8px';
+                el.style.transition = 'all 0.3s ease';
+
+                el.onmouseover = function () {
+                    this.style.background = 'linear-gradient(135deg, rgba(0, 255, 255, 0.1) 0%, rgba(0, 200, 255, 0.05) 100%)';
+                    this.style.transform = 'translateY(-2px)';
+                };
+                el.onmouseout = function () {
+                    this.style.background = 'linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%)';
+                    this.style.transform = 'translateY(0)';
+                };
+
+                el.innerHTML = `
+                        <div class="poem-title" style="color:#00ffff; font-size:16px; margin-bottom:8px; font-weight:bold;">${poem.title || poem.Title} ${(poem.subTitle || poem.SubTitle) ? '<span style="font-size:12px; color:rgba(0,255,255,0.7);">· ' + (poem.subTitle || poem.SubTitle) + '</span>' : ''}</div>
+                        <div class="poem-info" style="font-size:13px; color:rgba(255,255,255,0.8);">
+                            <span class="dynasty">${poem.dynasty || poem.Dynasty || '未知朝代'}</span> · 
+                            <span class="author" style="color: #66ffff;">${poem.author || poem.Author || '佚名'}</span>
+                        </div>
+                    `;
+
+                el.addEventListener('click', () => {
+                    const contentText = poem.content || poem.Content || '';
+                    showPoemDetailDialog(poem.title || poem.Title, poem.author || poem.Author, contentText);
+                });
+
+                container.appendChild(el);
+            });
+        }
+
+        window.showPoemDetailDialog = function (title, author, content) {
+            const contentHtml = content.split('。').join('。<br>');
+            const detailPanel = document.createElement('div');
+            detailPanel.className = 'poem-detail-panel';
+            detailPanel.style.position = 'fixed';
+            detailPanel.style.top = '50%';
+            detailPanel.style.left = '50%';
+            detailPanel.style.transform = 'translate(-50%, -50%)';
+            detailPanel.style.background = 'rgba(0, 20, 35, 0.95)';
+            detailPanel.style.backdropFilter = 'blur(12px)';
+            detailPanel.style.padding = '30px';
+            detailPanel.style.borderRadius = '16px';
+            detailPanel.style.border = '1px solid rgba(0, 255, 255, 0.3)';
+            detailPanel.style.boxShadow = '0 10px 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,255,255,0.2)';
+            detailPanel.style.zIndex = '999999';
+            detailPanel.style.width = '80%';
+            detailPanel.style.maxWidth = '600px';
+            detailPanel.style.maxHeight = '80vh';
+            detailPanel.style.display = 'flex';
+            detailPanel.style.flexDirection = 'column';
+
+            detailPanel.innerHTML = `
+                <div class="poem-detail-content" style="flex:1; overflow-y:auto; padding-right:10px;">
+                    <h2 style="color: #00ffff; text-shadow: 0 0 8px rgba(0,255,255,0.4); border-bottom:1px solid rgba(0,255,255,0.2); padding-bottom:10px; margin-top:0;">${title}</h2>
+                    <h3 style="color: #e0faff; font-weight: normal; margin-bottom: 20px;">作者：${author}</h3>
+                    <p style="line-height:2.0; color:#fff; font-size:16px;">${contentHtml}</p>
+                </div>
+                <div class="button-group" style="text-align:right; border-top:1px solid rgba(0,255,255,0.2); padding-top:15px; margin-top:20px;">
+                    <button class="save-detail-btn" style="background:#00ffff; color:#000; border:none; padding:8px 20px; border-radius:4px; font-weight:bold; cursor:pointer; margin-right:15px;">保存文本</button>
+                    <button class="close-detail-btn" style="background:transparent; border:1px solid #00ffff; color:#00ffff; padding:8px 20px; border-radius:4px; cursor:pointer;">关闭</button>
+                </div>
+                `;
+            document.body.appendChild(detailPanel);
+
+            detailPanel.querySelector('.close-detail-btn').addEventListener('click', () => detailPanel.remove());
+
+            const btnSave = detailPanel.querySelector('.save-detail-btn');
+            if (btnSave) {
+                btnSave.addEventListener('click', async () => {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: title,
+                            types: [{ description: '文本文件', accept: { 'text/plain': ['.txt'] } }]
+                        });
+                        const writable = await handle.createWritable();
+                        const txt = ['='.repeat(50), title, '='.repeat(50), '', '作者：' + author, '', '-'.repeat(50), content, '-'.repeat(50), '', '保存时间：' + new Date().toLocaleString()].join('\n');
+                        await writable.write(txt);
+                        await writable.close();
+                        // showToast('保存成功');
+                        alert('保存成功');
+                    } catch (e) { }
+                });
+            }
+        }
+
+        // 路由/城市入口复写
+        window.showLocationPoems = function (point) {
+            // 判断是否是线路节点（如果是对象本身带有 poems 属性）
+            if (point.hasOwnProperty('poems')) {
+                const title = point.customTitle || `路线节点：${point.name}`;
+                openPoemPanel(title);
+                const panelContent = document.getElementById('poemPanelContent');
+                if (panelContent) {
+                    if (point.poems.length === 0) {
+                        panelContent.innerHTML = '<div style="text-align:center; padding:20px; color:#aaa;">该节点暂未匹配到直接相关联的诗词。</div>';
+                    } else {
+                        panelContent.innerHTML = '';
+                        displayPoemsInPanel(point.poems);
+                    }
+                }
+                const footer = document.getElementById('poemPanelFooter');
+                if (footer) footer.style.display = 'none'; // 路线节点的诗词为全部固定内容，不翻页
+                return;
+            }
+
+            // 否则当作城市热点
+            openPoemPanel(`城市：${point.name}`);
+            const panelCon = document.getElementById('poemPanelContent');
+            if (panelCon) panelCon.innerHTML = '<div style="text-align:center; padding:20px;">正在加载数据...</div>';
+
+            window.currentSearchData = {
+                type: 'city',
+                keyword: point.name,
+                page: 1,
+                size: 15
+            };
+
+            loadPoemData(true);
+        };
+
+        // 只要 JS 执行到这，确保绑定挂载：
+        setTimeout(() => {
+            const btnSearch = document.getElementById('searchBtn');
+            if (btnSearch) {
+                // 清除可能旧的绑定
+                const nwBtn = btnSearch.cloneNode(true);
+                btnSearch.parentNode.replaceChild(nwBtn, btnSearch);
+                nwBtn.addEventListener('click', window.searchPoetry);
+            }
+            const inputArea = document.getElementById('citySearch');
+            if (inputArea) {
+                inputArea.addEventListener('keypress', function (e) {
+                    if (e.key === 'Enter') window.searchPoetry();
+                });
+            }
+            const btnClose = document.getElementById('closePoemPanelBtn');
+            if (btnClose) btnClose.addEventListener('click', () => document.getElementById('poemSidePanel').style.display = 'none');
+
+            const btnLoad = document.getElementById('loadMorePoemsBtn');
+            if (btnLoad) {
+                btnLoad.addEventListener('click', () => {
+                    if (window.currentSearchData) {
+                        window.currentSearchData.page += 1;
+                        loadPoemData(false);
+                    }
+                });
+            }
+        }, 1000);
+    </script>
+
+    <script>
+        // Heatmap rendering logic - Geographic ImageryLayer Version (Precision Fixed)
+        $(document).ready(function () {
+            let heatmapInstance = null;
+            let heatmapEnabled = true;
+            let heatmapLayer = null;
+
+            // 严密的投影范围 (等经纬度投影 / WGS84)
+            const CHINA_RECT = { west: 73.0, south: 18.0, east: 135.0, north: 54.0 };
+            const CSV_RECT = Cesium.Rectangle.fromDegrees(CHINA_RECT.west, CHINA_RECT.south, CHINA_RECT.east, CHINA_RECT.north);
+
+            const setupHeatmapInstance = () => {
+                const container = document.getElementById('heatmapContainer');
+                if (!container) return;
+
+                // 强制设置属性尺寸，防止 CSS 缩放导致的坐标偏移
+                container.setAttribute('width', '1024');
+                container.setAttribute('height', '1024');
+                container.style.width = '1024px';
+                container.style.height = '1024px';
+                container.style.position = 'absolute';
+                container.style.visibility = 'hidden';
+                container.style.zIndex = '-1000';
+                container.style.padding = '0';
+                container.style.margin = '0';
+
+                heatmapInstance = h337.create({
+                    container: container,
+                    radius: 30, // 增大半径提升视觉效果
+                    maxOpacity: 0.8,
+                    minOpacity: 0,
+                    blur: .8,
+                    gradient: {
+                        '.1': '#00ffff', 
+                        '.3': '#00ff00', 
+                        '.5': '#ffff00', 
+                        '.7': '#ff8800', 
+                        '.9': '#ff0000'  
+                    }
+                });
+                
+                // 强制将内部 canvas 的宽高属性锁定
+                setTimeout(() => {
+                    const cvs = container.querySelector('canvas');
+                    if (cvs) {
+                        cvs.setAttribute('width', '1024');
+                        cvs.setAttribute('height', '1024');
+                    }
+                }, 100);
+            };
+
+            setupHeatmapInstance();
+
+            function toggleHeatmap() {
+                heatmapEnabled = !heatmapEnabled;
+                const btn = document.getElementById('btnHeatmap');
+                if (btn) btn.classList.toggle('active', heatmapEnabled);
+                if (heatmapLayer) heatmapLayer.show = heatmapEnabled;
+                if (heatmapEnabled) updateHeatmap();
+            }
+
+            const btn = document.getElementById('btnHeatmap');
+            if (btn) btn.addEventListener('click', toggleHeatmap);
+
+            function updateHeatmap(yearFilter = null) {
+                if (!heatmapInstance || !window.poetryData) return;
+
+                const points = [];
+                let max = 0;
+
+                // 转换函数：[lon, lat] -> [0-1024, 0-1024]
+                const latLonToPixel = (lon, lat) => {
+                    const x = ((lon - CHINA_RECT.west) / (CHINA_RECT.east - CHINA_RECT.west)) * 1024;
+                    const y = ((CHINA_RECT.north - lat) / (CHINA_RECT.north - CHINA_RECT.south)) * 1024;
+                    return { x: Math.floor(x), y: Math.floor(y) };
+                };
+
+                window.poetryData.forEach(city => {
+                    let cnt = yearFilter ? (window.getCountByYear ? window.getCountByYear(city.yearData, yearFilter) : city.count) : (city.count || 0);
+                    if (cnt > 0) {
+                        max = Math.max(max, cnt);
+                        const p = latLonToPixel(city.lon, city.lat);
+                        if (p.x >= 0 && p.x <= 1024 && p.y >= 0 && p.y <= 1024) {
+                            points.push({ x: p.x, y: p.y, value: cnt });
+                        }
+                    }
+                });
+
+                heatmapInstance.setData({ max: max * 0.8, data: points });
+
+                const canvas = document.querySelector('#heatmapContainer canvas');
+                if (canvas && typeof viewer !== "undefined") {
+                    const provider = new Cesium.SingleTileImageryProvider({
+                        url: canvas.toDataURL(),
+                        rectangle: CSV_RECT,
+                        tilingScheme: new Cesium.GeographicTilingScheme()
+                    });
+
+                    const oldLayer = heatmapLayer;
+                    heatmapLayer = viewer.imageryLayers.addImageryProvider(provider);
+                    heatmapLayer.alpha = 0.8;
+                    heatmapLayer.show = heatmapEnabled;
+
+                    // 延迟移除旧图层，消除切换闪烁
+                    if (oldLayer) {
+                        setTimeout(() => viewer.imageryLayers.remove(oldLayer), 100);
+                    }
+                }
+            }
+
+            document.addEventListener('heatmapYearFilter', function (e) {
+                if (heatmapEnabled) updateHeatmap(e.detail.year);
+            });
+
+            // 初始渲染
+            setTimeout(() => {
+                if (heatmapEnabled) updateHeatmap();
+            }, 1000);
+            
+            // 数据重连校验
+            window.addEventListener('load', () => {
+                 setTimeout(() => { if (heatmapEnabled) updateHeatmap(); }, 2000);
+            });
+        });
+    </script>
+</body>
+
+</html>
